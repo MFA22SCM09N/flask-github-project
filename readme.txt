@@ -10,7 +10,7 @@ Step 1: What will Flask do?
 
 Step 2: Deploying Flask to gcloud platform
        1: You must have Docker(https://www.docker.com/get-started) and Google Cloud SDK(https://cloud.google.com/sdk/docs/install) 
-           installed on your computer. Then, Create a gcloud project and enable the following:
+           installed on your computer. Then, Create a gcloud project (flask-project) and enable the following:
            a.billing account
            b.Conatiner Registry API
            c. Cloudbuild API
@@ -26,6 +26,7 @@ Step 2: Deploying Flask to gcloud platform
 
        6: Now type `docker tag <your newest image id> gcr.io/<your project-id>/<project-name>` and hit enter 
             Type `docker images` to see your image id updated with tag name
+            docker tag 96595536a029 gcr.io/flask-project-368814/flask-project
 
        7: Type `gcloud init` on cmd and it will prompt Create or select a configuration choose existing configurations and hit enter and
           it will prompt Choose a current Google Cloud project, choose your current gcloud project number and hit enter.
@@ -36,7 +37,7 @@ Step 2: Deploying Flask to gcloud platform
 
        10: Generate a Personal Access Token on GitHub by following below steps:
           a. Navigate to your Git account settings, then Developer Settings. Click the Personal access tokens menu, then click Generate new token.
-          b. Select repo and public as the scope as shown in recording. 
+          b. Select repo (flask-github-project) and public as the scope as shown in recording. 
           c. Click Generate Token.
           d. Copy the generated token and paste it in your sticky notes
 
@@ -51,7 +52,9 @@ Step 2: Deploying Flask to gcloud platform
        12: Click on create, this will create the service on port 5000 and will generate the url, hit the url.
 
        13: Copy flask gcloud generated url and paste in it sticky notes.
-       
+       https://flask-project-4pul5szz3a-uc.a.run.app
+
+       14. trigger name - flask-assign-trigger
 
 Step 3: To run locally:
        1. In app.py, at line 60, add your GitHub token

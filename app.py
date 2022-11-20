@@ -46,12 +46,45 @@ def build_actual_response(response):
                          "PUT, GET, POST, DELETE, OPTIONS")
     return response
 
-'''
+
+def get_commits(github_url, repo_name, headers, params):
+    commits = []
+    today = date.today()
+    for i in range(24):
+        last_month = today + dateutil.relativedelta.relativedelta(months=-1)
+        types = 'type:issue'
+        repo = 'repo:' + repo_name
+        ranges = 'created:' + str(last_month) + '..' + str(today)
+        # By default GitHub API returns only 30 results per page
+        # The maximum number of results per page is 100
+        # For more info, visit https://docs.github.com/en/rest/reference/repos 
+        per_page = 'per_page=100'
+        # Search query will create a query to fetch data for a given repository in a given time range
+        search_query = ranges
+
+        # Append the search query to the GitHub API URL 
+        query_url = github_url + "repos/" + repo_name + "/commits?q=" + search_query + "&" + per_page
+        # requsets.get will fetch requested query_url from the GitHub API
+        commit_request = requests.get(query_url, headers=headers)
+        # Convert the data obtained from GitHub API to JSON format
+        commit_results = commit_request.json()
+        for commit in commit_results:
+            data = {}
+            current_issue = commit
+            data['sha'] = current_issue["sha"]
+            data['committed_at'] = current_issue["commit"]["author"]["date"]
+            commits.append(data)
+        today = last_month
+    return commits
+
+
+''' 
 API route path is  "/api/forecast"
 This API will accept only POST request
 '''
 @app.route('/api/github', methods=['POST'])
 def github():
+    print("Entered github function")
     body = request.get_json()
     # Extract the choosen repositories from the request
     repo_name = body['repository']
@@ -63,7 +96,7 @@ def github():
         "Authorization": f'token {token}'
     }
     params = {
-        "state": "open"
+        "state": "all"
     }
     repository_url = GITHUB_URL + "repos/" + repo_name
     # Fetch GitHub data from GitHub API
@@ -75,7 +108,8 @@ def github():
 
     issues_reponse = []
     # Iterating to get issues for every month for the past 12 months
-    for i in range(12):
+    print("Iterating to get issues for every month for the past 24 months")
+    for i in range(24):
         last_month = today + dateutil.relativedelta.relativedelta(months=-1)
         types = 'type:issue'
         repo = 'repo:' + repo_name
@@ -89,10 +123,12 @@ def github():
 
         # Append the search query to the GitHub API URL 
         query_url = GITHUB_URL + "search/issues?q=" + search_query + "&" + per_page
+        # print("Mehak: github query ", query_url)
         # requsets.get will fetch requested query_url from the GitHub API
         search_issues = requests.get(query_url, headers=headers, params=params)
         # Convert the data obtained from GitHub API to JSON format
         search_issues = search_issues.json()
+
         issues_items = []
         try:
             # Extract "items" from search issues
@@ -161,15 +197,18 @@ def github():
     closed_at = df['closed_at'].sort_values(ascending=True)
     month_issue_closed = pd.to_datetime(
         pd.Series(closed_at), format='%Y/%m/%d')
-    month_issue_closed.index = month_issue_closed.dt.to_period('m')
+    month_issue_closed.index = month_issue_closed.dt.to_period('w')
     month_issue_closed = month_issue_closed.groupby(level=0).size()
     month_issue_closed = month_issue_closed.reindex(pd.period_range(
-        month_issue_closed.index.min(), month_issue_closed.index.max(), freq='m'), fill_value=0)
+        month_issue_closed.index.min(), month_issue_closed.index.max(), freq='w'), fill_value=0)
     month_issue_closed_dict = month_issue_closed.to_dict()
     closed_at_issues = []
     for key in month_issue_closed_dict.keys():
         array = [str(key), month_issue_closed_dict[key]]
         closed_at_issues.append(array)
+
+    # get commits data from the github repo
+    commits_response = get_commits(GITHUB_URL, repo_name, headers, params)
 
     '''
         1. Hit LSTM Microservice by passing issues_response as body
@@ -187,15 +226,26 @@ def github():
         "type": "closed_at",
         "repo": repo_name.split("/")[1]
     }
+    pull_request_body = {
+        "issues": issues_reponse,
+        "type": "pull",
+        "repo": repo_name.split("/")[1]
+    }
+    commit_request_body = {
+        "issues": commits_response,
+        "type": "committed_at",
+        "repo": repo_name.split("/")[1]
+    }
 
     # Update your Google cloud deployed LSTM app URL (NOTE: DO NOT REMOVE "/")
-    LSTM_API_URL = "https://lstm-service-pckyyaqebq-uc.a.run.app/" + "api/forecast"
+    LSTM_API_URL = "https://lstm-service2-pckyyaqebq-uc.a.run.app/" + "api/forecast"
 
     '''
     Trigger the LSTM microservice to forecasted the created issues
     The request body consists of created issues obtained from GitHub API in JSON format
     The response body consists of Google cloud storage path of the images generated by LSTM microservice
     '''
+    print("trigger forecast for created at response")
     created_at_response = requests.post(LSTM_API_URL,
                                         json=created_at_body,
                                         headers={'content-type': 'application/json'})
@@ -205,10 +255,34 @@ def github():
     The request body consists of closed issues obtained from GitHub API in JSON format
     The response body consists of Google cloud storage path of the images generated by LSTM microservice
     '''    
+    print("trigger forecast for closed at response")
     closed_at_response = requests.post(LSTM_API_URL,
                                        json=closed_at_body,
                                        headers={'content-type': 'application/json'})
-    
+
+    '''
+    Trigger the LSTM microservice to forecasted the pulls
+    The request body consists of normal data as above, LSTM microservice will handle the
+    pull extraction on its own obtained from GitHub API in JSON format
+    The response body consists of Google cloud storage path of the images generated by LSTM microservice
+    '''
+    print("trigger forecast for pull at response")
+    pull_response = requests.post(LSTM_API_URL,
+                                       json=pull_request_body,
+                                       headers={'content-type': 'application/json'})
+     
+
+    '''
+    Trigger the LSTM microservice to forecasted the commited issues
+    The request body consists of commits issues obtained from GitHub API in JSON format
+    The response body consists of Google cloud storage path of the images generated by LSTM microservice
+    '''
+    print("trigger forecast for commited at response")
+    commit_response = requests.post(LSTM_API_URL,
+                                       json=commit_request_body,
+                                       headers={'content-type': 'application/json'}) 
+
+
     '''
     Create the final response that consists of:
         1. GitHub repository data obtained from GitHub API
@@ -224,6 +298,12 @@ def github():
         },
         "closedAtImageUrls": {
             **closed_at_response.json(),
+        },
+        "pullImageUrls": {
+            **pull_response.json(),
+        },
+        "commitImageUrls": {
+            **commit_response.json(),
         },
     }
     # Return the response back to client (React app)
